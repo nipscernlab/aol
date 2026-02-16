@@ -141,7 +141,8 @@ async function processImageFile(file) {
 
     // compute position (centered horizontally, lower-center vertically)
     const posX = Math.round((baseW - ovW) / 2);
-    const posY = Math.round(baseH * centerPercent - ovH / 2);
+    const bottomMarginPercent = 0.01;
+    const posY = Math.round(baseH - ovH - baseH * bottomMarginPercent);
     const clampedX = Math.max(0, Math.min(posX, baseW - ovW));
     const clampedY = Math.max(0, Math.min(posY, baseH - ovH));
 
