@@ -1,0 +1,15 @@
+{
+  "name": "image_compositor",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "image_compositor_bg.wasm",
+    "image_compositor.js",
+    "image_compositor.d.ts"
+  ],
+  "main": "image_compositor.js",
+  "types": "image_compositor.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>AOL</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Drag & Drop an image — processed locally with WebAssembly</h1>
+
+    <div id="drop" class="drop">
+      <p>Drop PNG or JPEG here</p>
+    </div>
+
+    <section class="results">
+      <canvas id="resultCanvas" style="display:none"></canvas>
+      <img id="preview" alt="result preview" />
+      <a id="downloadBtn" download="with_heart.png" style="display:none">Download result</a>
+    </section>
+  </main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+:root { --bg: #0f1720; --card: #0b1220; --accent: #ff5b7f; --text: #eef2f7; }
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:linear-gradient(180deg,#071021, #0b1220);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+main{max-width:900px;margin:6vh auto;padding:32px;text-align:center}
+h1{font-size:1.6rem;font-weight:600;margin:0 0 24px}
+.drop{border:2px dashed rgba(255,255,255,0.06);padding:48px;border-radius:12px;background:rgba(255,255,255,0.02);cursor:copy}
+.drop p{margin:0;color:rgba(255,255,255,0.6)}
+.results{margin-top:20px;display:flex;gap:16px;align-items:center;justify-content:center;flex-direction:column}
+#preview{max-width:100%;border-radius:8px;box-shadow:0 10px 30px rgba(2,6,23,0.6)}
+#downloadBtn{display:inline-block;margin-top:8px;padding:10px 14px;border-radius:8px;background:linear-gradient(90deg,var(--accent),#ff7aa6);color:#06101a;text-decoration:none;font-weight:600}
