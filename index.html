@@ -3,27 +3,68 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>AOL | Ansikt Over Lyset </title>
+  <title>AOL — Ansikt Over Lyset</title>
+
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;800&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+
+  <!-- Font Awesome -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+  <!-- favicon (SVG recommended) -->
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
+
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <header class="site-header" role="banner">
+    <div class="brand">
+      <div class="brand-text">
+        <h1 class="brand-title">AOL</h1>
+        <p class="brand-sub">Ansikt Over Lyset — local image compositor</p>
+      </div>
+    </div>
+  </header>
+
   <main>
-    <h1>AOL | Ansikt Over Lyset</h1>
+    <section class="hero" aria-labelledby="hero-title">
+      <h2 id="hero-title" class="hero-title">Drop an image to apply the CERN emblem — processed locally</h2>
 
-    <div id="drop" class="drop" aria-label="Drop image here" role="button" tabindex="0">
-      <svg viewBox="0 0 24 24" class="icon" aria-hidden="true">
-        <path d="M12 21s-7-4.35-9-7.04C0.64 10.88 3.12 6 7.5 6c1.9 0 3.36 1.06 4.5 2.36C13.14 7.06 14.6 6 16.5 6 20.88 6 23.36 10.88 21 13.96 19 16.65 12 21 12 21z" />
-      </svg>
-      <p class="hint">Drop PNG or JPEG here, or click to select</p>
-      <input id="fileInput" type="file" accept="image/png,image/jpeg" style="display:none" />
-    </div>
+      <div id="drop" class="drop" role="button" tabindex="0" aria-label="Drop image here">
+        <i class="fa-solid fa-image drop-icon" aria-hidden="true"></i>
+        <p class="drop-hint">Drop PNG or JPEG here, or click to select</p>
+        <input id="fileInput" type="file" accept="image/png,image/jpeg" aria-label="Choose an image" />
+      </div>
+    </section>
 
-    <div class="results">
-      <canvas id="resultCanvas" style="display:none"></canvas>
-      <img id="preview" alt="result preview" />
-      <a id="downloadBtn" class="btn" download="with_cern.png" style="display:none">Download image</a>
-    </div>
+    <section class="previews" aria-live="polite">
+      <figure class="preview-block">
+        <figcaption class="label">Original</figcaption>
+        <div class="frame">
+          <img id="origPreview" class="preview-image" alt="original preview" />
+        </div>
+      </figure>
+
+      <figure class="preview-block">
+        <figcaption class="label">Result</figcaption>
+        <div class="frame">
+          <img id="preview" class="preview-image" alt="processed preview" />
+        </div>
+        <a id="downloadBtn" class="btn" download="aol_result.png" aria-hidden="true" style="display:none"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</a>
+      </figure>
+    </section>
   </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span>AOL — Ansikt Over Lyset</span>
+      <span class="dot">•</span>
+      <span>Processed locally in your browser</span>
+      <span class="dot">•</span>
+      <span>WebAssembly · Rust</span>
+    </div>
+  </footer>
+
 
   <script type="module" src="app.js"></script>
 </body>

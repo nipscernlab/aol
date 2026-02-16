@@ -1,12 +1,12 @@
-// app.js — robust DnD + correct SVG rasterization + centered-bottom heart + wasm composite
-import init, { composite_rgba } from './pkg/image_compositor.js'; // ajustar se necessário
+// app.js — offscreen canvas pipeline, no duplication, CERN emblem overlay, side-by-side previews
+import init, { composite_rgba } from './pkg/image_compositor.js';
 await init();
 
 const drop = document.getElementById('drop');
 const fileInput = document.getElementById('fileInput');
+const origPreview = document.getElementById('origPreview');
 const previewImg = document.getElementById('preview');
 const downloadBtn = document.getElementById('downloadBtn');
-const resultCanvas = document.getElementById('resultCanvas');
 
 let dragCounter = 0;
 function preventDefaults(e){ e.preventDefault(); e.stopPropagation(); }
@@ -15,15 +15,24 @@ window.addEventListener('dragover', e => { if (e.dataTransfer) e.dataTransfer.dr
 
 drop.addEventListener('dragenter', () => { dragCounter++; drop.classList.add('drag-over'); });
 drop.addEventListener('dragleave', () => { dragCounter = Math.max(0, dragCounter - 1); if (dragCounter === 0) drop.classList.remove('drag-over'); });
-drop.addEventListener('drop', async (e) => { dragCounter = 0; drop.classList.remove('drag-over'); const dt = e.dataTransfer; if (!dt) return;
+drop.addEventListener('drop', async (e) => {
+  dragCounter = 0;
+  drop.classList.remove('drag-over');
+  const dt = e.dataTransfer;
+  if (!dt) return;
   const file = dt.files && dt.files.length ? dt.files[0] : getFileFromItems(dt.items);
-  if (!file) { alert('No file detected. Drop a PNG or JPEG.'); return; }
-  if (!file.type.startsWith('image/')) { alert('Please drop an image (PNG/JPEG).'); return; }
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { alert('Please drop an image (PNG or JPEG).'); return; }
   await processImageFile(file);
 });
 
 drop.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', async (e) => { const f = e.target.files && e.target.files[0]; if(!f) return; await processImageFile(f); fileInput.value = ''; });
+fileInput.addEventListener('change', async (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  await processImageFile(f);
+  fileInput.value = '';
+});
 
 function getFileFromItems(items){
   if (!items || !items.length) return null;
@@ -38,129 +47,102 @@ function getFileFromItems(items){
 
 async function processImageFile(file){
   try {
-    // draw base image
+    // create offscreen base canvas
     const imgBitmap = await createImageBitmap(file);
+    const baseW = imgBitmap.width;
+    const baseH = imgBitmap.height;
+
     const baseCanvas = document.createElement('canvas');
-    baseCanvas.width = imgBitmap.width;
-    baseCanvas.height = imgBitmap.height;
-    const baseCtx = baseCanvas.getContext('2d');
-    baseCtx.drawImage(imgBitmap, 0, 0);
+    baseCanvas.width = baseW;
+    baseCanvas.height = baseH;
+    const bctx = baseCanvas.getContext('2d');
+    bctx.clearRect(0,0,baseW,baseH);
+    bctx.drawImage(imgBitmap,0,0);
 
-    // PARAMETERS: change these to tweak size/vertical position
-    const scale = 0.35;           // heart width = 35% of image width (increase/decrease here)
-    const centerPercent = 0.58;   // vertical center position (0.5 = center, >0.5 = lower). Adjust as needed.
+    // show original preview (limit applied via CSS)
+    baseCanvas.toBlob((b) => {
+      if (!b) return;
+      origPreview.src = URL.createObjectURL(b);
+    }, 'image/png');
 
-    // fetch and rasterize SVG robustly
-    const heartSvgPath = './assets/little_cern.svg';
-    const svgText = await fetch(heartSvgPath, {cache: 'no-cache'}).then(r => {
-      if (!r.ok) throw new Error(`SVG fetch failed: ${r.status}`);
+    // emblem params
+    const scale = 0.44;        // emblem width relative to image width
+    const centerPercent = 0.62; // center-lower placement
+
+    // load emblem SVG
+    const emblemPath = './assets/cern_emblem.svg';
+    const svgText = await fetch(emblemPath, {cache: 'no-cache'}).then(r => {
+      if (!r.ok) throw new Error('emblem fetch failed ' + r.status);
       return r.text();
     });
-
     const svgBlob = new Blob([svgText], { type: 'image/svg+xml' });
-    // get intrinsic SVG bitmap
-    let svgBitmap;
-    try {
-      svgBitmap = await createImageBitmap(svgBlob);
-    } catch (err) {
-      console.warn('createImageBitmap(svgBlob) failed, will try fallback rendering to canvas', err);
-      // fallback: draw raw svg into an <img> then into canvas
-      svgBitmap = null;
-    }
 
-    // compute overlay size preserving aspect ratio
-    const ovW = Math.max(32, Math.round(baseCanvas.width * scale));
-    let ovH;
-    if (svgBitmap) {
-      const ratio = svgBitmap.height / svgBitmap.width;
-      ovH = Math.max(32, Math.round(ovW * ratio));
-    } else {
-      // assume square if we couldn't rasterize intrinsic size
-      ovH = ovW;
-    }
+    let svgBitmap = null;
+    try { svgBitmap = await createImageBitmap(svgBlob); } catch(e){ svgBitmap = null; }
 
-    // create overlay canvas and draw svg scaled
+    const ovW = Math.max(64, Math.round(baseW * scale));
+    const ovH = svgBitmap ? Math.max(64, Math.round(ovW * (svgBitmap.height / svgBitmap.width))) : ovW;
+
     const ovCanvas = document.createElement('canvas');
     ovCanvas.width = ovW;
     ovCanvas.height = ovH;
     const ovCtx = ovCanvas.getContext('2d');
-    ovCtx.clearRect(0, 0, ovW, ovH);
+    ovCtx.clearRect(0,0,ovW,ovH);
 
     if (svgBitmap) {
-      // draw scaled bitmap preserving aspect ratio
       ovCtx.drawImage(svgBitmap, 0, 0, ovW, ovH);
     } else {
-      // fallback: draw svg via img element (synchronous-ish)
       await new Promise((resolve, reject) => {
         const img = new Image();
-        img.onload = () => {
-          // compute ratio if possible
-          const ratio = (img.naturalHeight && img.naturalWidth) ? (img.naturalHeight / img.naturalWidth) : 1;
-          const ovH_fallback = Math.max(32, Math.round(ovW * ratio));
-          if (ovCanvas.height !== ovH_fallback) {
-            ovCanvas.height = ovH_fallback;
-          }
-          ovCtx.clearRect(0,0,ovCanvas.width,ovCanvas.height);
-          ovCtx.drawImage(img, 0, 0, ovCanvas.width, ovCanvas.height);
-          resolve();
-        };
-        img.onerror = (err) => reject(err);
-        // ensure same-origin by using the blob URL
+        img.onload = () => { ovCtx.drawImage(img, 0, 0, ovW, ovH); resolve(); };
+        img.onerror = reject;
         img.src = URL.createObjectURL(svgBlob);
       });
     }
 
-    // optional: add a slight drop shadow to the overlay to help visibility
-    // (draw overlay onto temporary canvas with shadow, then read pixels)
-    // omitted here to keep pipeline simple
+    const overlayImageData = ovCtx.getImageData(0,0,ovW,ovH);
 
-    const overlayImageData = ovCtx.getImageData(0, 0, ovW, ovH);
+    // compute position centered horizontally, a bit below center
+    const posX = Math.round((baseW - ovW) / 2);
+    const posY = Math.round(baseH * centerPercent - ovH / 2);
+    const clampedX = Math.max(0, Math.min(posX, baseW - ovW));
+    const clampedY = Math.max(0, Math.min(posY, baseH - ovH));
 
-    // compute centered-bottom position
-    const posX = Math.round((baseCanvas.width - ovW) / 2); // center horizontally
-    // centerPercent is the vertical center where the heart center will align
-    const posY = Math.round(baseCanvas.height * centerPercent - ovH / 2);
+    const baseImageData = bctx.getImageData(0,0,baseW,baseH);
 
-    // clamp coordinates so overlay stays inside image
-    const clampedX = Math.max(0, Math.min(posX, baseCanvas.width - ovW));
-    const clampedY = Math.max(0, Math.min(posY, baseCanvas.height - ovH));
-
-    // prepare base image data for wasm
-    const baseImageData = baseCtx.getImageData(0, 0, baseCanvas.width, baseCanvas.height);
-
-    // call wasm compositor
+    // call wasm
     const resultArr = composite_rgba(
-      baseImageData.data, baseCanvas.width, baseCanvas.height,
+      baseImageData.data, baseW, baseH,
       overlayImageData.data, ovW, ovH,
       clampedX, clampedY
     );
 
-    if (!resultArr || resultArr.length !== baseCanvas.width * baseCanvas.height * 4) {
-      console.error('Unexpected result from wasm composite', resultArr && resultArr.length);
-      alert('Processing failed: compositor returned invalid result.');
+    if (!resultArr || resultArr.length !== baseW * baseH * 4) {
+      console.error('Invalid result from wasm composite', resultArr && resultArr.length);
+      alert('Processing failed. See console.');
       return;
     }
 
-    const resultImgData = new ImageData(new Uint8ClampedArray(resultArr), baseCanvas.width, baseCanvas.height);
+    const resultImgData = new ImageData(new Uint8ClampedArray(resultArr), baseW, baseH);
 
-    // draw to visible canvas and show preview/download
-    const dest = resultCanvas;
-    dest.width = baseCanvas.width;
-    dest.height = baseCanvas.height;
-    dest.style.display = 'block';
-    const rCtx = dest.getContext('2d');
-    rCtx.putImageData(resultImgData, 0, 0);
+    // draw final to offscreen canvas and export
+    const destCanvas = document.createElement('canvas');
+    destCanvas.width = baseW;
+    destCanvas.height = baseH;
+    const dctx = destCanvas.getContext('2d');
+    dctx.putImageData(resultImgData, 0, 0);
 
-    dest.toBlob((blob) => {
+    destCanvas.toBlob((blob) => {
       if (!blob) return;
       const url = URL.createObjectURL(blob);
       previewImg.src = url;
       downloadBtn.href = url;
-      downloadBtn.style.display = 'inline-block';
+      downloadBtn.style.display = 'inline-flex';
+      downloadBtn.setAttribute('aria-hidden', 'false');
     }, 'image/png');
 
   } catch (err) {
     console.error('processImageFile error', err);
-    alert('Failed to process image. See console for details.');
+    alert('Failed to process image. See console.');
   }
 }
