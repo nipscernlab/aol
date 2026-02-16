@@ -1,79 +1,113 @@
-import init, { composite_rgba } from './pkg/aol_web.js';
-
-await init(); // initialize wasm module
+// Minimal, robust drag & drop capture for images (desktop or other apps).
+// Prevents default navigation (opening dropped file in browser) and shows a smooth animation.
 
 const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
 const previewImg = document.getElementById('preview');
 const downloadBtn = document.getElementById('downloadBtn');
 const resultCanvas = document.getElementById('resultCanvas');
 
-function prevent(e){ e.preventDefault(); e.stopPropagation(); }
-['dragenter','dragover','dragleave','drop'].forEach(evt => drop.addEventListener(evt, prevent));
+let dragCounter = 0; // help with nested dragenter/dragleave
 
-drop.addEventListener('drop', async (ev) => {
-  const file = ev.dataTransfer.files[0];
-  if (!file) return;
-  if (!file.type.startsWith('image/')) {
-    alert('Please drop an image (PNG/JPEG).');
+// Prevent the browser from opening files when dragged to the window
+function preventDefaults(e){
+  e.preventDefault();
+  e.stopPropagation();
+}
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
+  window.addEventListener(evt, preventDefaults, false);
+});
+
+// Indicate copy cursor
+window.addEventListener('dragover', e => {
+  e.dataTransfer.dropEffect = 'copy';
+});
+
+// Drop target visual behavior — use counter to avoid flicker
+drop.addEventListener('dragenter', (e) => {
+  dragCounter++;
+  drop.classList.add('drag-over');
+});
+
+drop.addEventListener('dragleave', (e) => {
+  dragCounter = Math.max(0, dragCounter - 1);
+  if (dragCounter === 0) drop.classList.remove('drag-over');
+});
+
+drop.addEventListener('drop', async (e) => {
+  dragCounter = 0;
+  drop.classList.remove('drag-over');
+
+  const dt = e.dataTransfer;
+  if (!dt) return;
+
+  // Prefer actual files (desktop drag), otherwise try DataTransferItem (e.g., dragged from other apps)
+  const file = dt.files && dt.files.length ? dt.files[0] : getFileFromItems(dt.items);
+  if (!file) {
+    alert('No file detected. Drop a PNG or JPEG image.');
     return;
   }
 
-  const imgBitmap = await createImageBitmap(file);
-  // prepare base canvas
-  const baseCanvas = document.createElement('canvas');
-  baseCanvas.width = imgBitmap.width;
-  baseCanvas.height = imgBitmap.height;
-  const baseCtx = baseCanvas.getContext('2d');
-  baseCtx.drawImage(imgBitmap, 0, 0);
+  if (!file.type.startsWith('image/')) {
+    alert('Please drop an image (PNG or JPEG).');
+    return;
+  }
 
-  const baseImageData = baseCtx.getImageData(0,0,baseCanvas.width, baseCanvas.height);
-
-  // load SVG heart and rasterize it to an offscreen canvas scaled to 15% of width
-  const heartSvgUrl = './assets/little_heart.svg';
-  const heartImg = new Image();
-  // ensure same-origin or CORS allowed; svg is local asset
-  heartImg.src = heartSvgUrl;
-  await heartImg.decode();
-
-  const scale = 0.15;
-  const ovW = Math.max(32, Math.round(baseCanvas.width * scale));
-  const ovH = Math.round(heartImg.height * (ovW / heartImg.width)); // preserve aspect ratio
-
-  const ovCanvas = document.createElement('canvas');
-  ovCanvas.width = ovW;
-  ovCanvas.height = ovH;
-  const ovCtx = ovCanvas.getContext('2d');
-  // optional: draw with smoothing
-  ovCtx.drawImage(heartImg, 0, 0, ovW, ovH);
-  const overlayImageData = ovCtx.getImageData(0,0,ovW,ovH);
-
-  // compute position: bottom-right with 4% margin
-  const margin = Math.round(baseCanvas.width * 0.04);
-  const posX = baseCanvas.width - ovW - margin;
-  const posY = baseCanvas.height - ovH - margin;
-
-  // call WASM composite
-  const resultArray = composite_rgba(
-    baseImageData.data, baseCanvas.width, baseCanvas.height,
-    overlayImageData.data, ovW, ovH,
-    posX, posY
-  );
-
-  // resultArray is a Uint8ClampedArray (ImageData)
-  const resultImgData = new ImageData(new Uint8ClampedArray(resultArray), baseCanvas.width, baseCanvas.height);
-
-  // draw to visible canvas
-  resultCanvas.width = baseCanvas.width;
-  resultCanvas.height = baseCanvas.height;
-  resultCanvas.style.display = 'block';
-  const rCtx = resultCanvas.getContext('2d');
-  rCtx.putImageData(resultImgData, 0, 0);
-
-  // show preview (img element) by converting to blob url
-  resultCanvas.toBlob((blob) => {
-    const url = URL.createObjectURL(blob);
-    previewImg.src = url;
-    downloadBtn.href = url;
-    downloadBtn.style.display = 'inline-block';
-  }, 'image/png');
+  await handleImageFile(file);
 });
+
+// also support click-to-select
+drop.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', async (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  await handleImageFile(f);
+  fileInput.value = '';
+});
+
+// Helper: if items exist, try to extract a file item
+function getFileFromItems(items){
+  if (!items || !items.length) return null;
+  for (const it of items) {
+    if (it.kind === 'file') {
+      const file = it.getAsFile();
+      if (file && file.type && file.type.startsWith('image/')) return file;
+    }
+    // Some apps put a URI or HTML - try to handle fallback by reading string
+  }
+  return null;
+}
+
+// Actual processing: preview and enable download
+async function handleImageFile(file){
+  try {
+    // Use createImageBitmap for better performance / orientation-neutral
+    const imgBitmap = await createImageBitmap(file);
+
+    // Draw into canvas
+    const canvas = resultCanvas;
+    canvas.width = imgBitmap.width;
+    canvas.height = imgBitmap.height;
+    canvas.style.display = 'block';
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(imgBitmap, 0, 0);
+
+    // For now we are not yet calling WASM; we simply show preview.
+    // If you later call the wasm compositor, you can replace the following steps
+    // with a putImageData from WASM result.
+
+    // Convert to blob and show preview + download
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      previewImg.src = url;
+      downloadBtn.href = url;
+      downloadBtn.style.display = 'inline-block';
+    }, 'image/png');
+
+  } catch (err) {
+    console.error(err);
+    alert('Failed to read image. Try a different file.');
+  }
+}

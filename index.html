@@ -1,26 +1,30 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>AOL</title>
-<link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Drag & Drop Image — WASM Demo</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <main>
-    <h1>Drag & Drop an image — processed locally with WebAssembly</h1>
+    <h1>Drag & drop an image to add a heart (processed locally)</h1>
 
-    <div id="drop" class="drop">
-      <p>Drop PNG or JPEG here</p>
+    <div id="drop" class="drop" aria-label="Drop image here" role="button" tabindex="0">
+      <svg viewBox="0 0 24 24" class="icon" aria-hidden="true">
+        <path d="M12 21s-7-4.35-9-7.04C0.64 10.88 3.12 6 7.5 6c1.9 0 3.36 1.06 4.5 2.36C13.14 7.06 14.6 6 16.5 6 20.88 6 23.36 10.88 21 13.96 19 16.65 12 21 12 21z" />
+      </svg>
+      <p class="hint">Drop PNG or JPEG here, or click to select</p>
+      <input id="fileInput" type="file" accept="image/png,image/jpeg" style="display:none" />
     </div>
 
-    <section class="results">
+    <div class="results">
       <canvas id="resultCanvas" style="display:none"></canvas>
       <img id="preview" alt="result preview" />
-      <a id="downloadBtn" download="with_heart.png" style="display:none">Download result</a>
-    </section>
+      <a id="downloadBtn" class="btn" download="with_heart.png" style="display:none">Download image</a>
+    </div>
   </main>
 
-<script type="module" src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
