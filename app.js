@@ -1,4 +1,5 @@
-// app.js — offscreen canvas pipeline, no duplication, CERN emblem overlay, side-by-side previews
+// app.js — complete, robust image pipeline (accepts PNG/JPG/SVG inputs and emblem types)
+// emblem is './assets/atlas_emblem.jpg'
 import init, { composite_rgba } from './pkg/image_compositor.js';
 await init();
 
@@ -13,6 +14,7 @@ function preventDefaults(e){ e.preventDefault(); e.stopPropagation(); }
 ['dragenter','dragover','dragleave','drop'].forEach(evt => window.addEventListener(evt, preventDefaults, false));
 window.addEventListener('dragover', e => { if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; });
 
+// UI drag state
 drop.addEventListener('dragenter', () => { dragCounter++; drop.classList.add('drag-over'); });
 drop.addEventListener('dragleave', () => { dragCounter = Math.max(0, dragCounter - 1); if (dragCounter === 0) drop.classList.remove('drag-over'); });
 drop.addEventListener('drop', async (e) => {
@@ -22,7 +24,7 @@ drop.addEventListener('drop', async (e) => {
   if (!dt) return;
   const file = dt.files && dt.files.length ? dt.files[0] : getFileFromItems(dt.items);
   if (!file) return;
-  if (!file.type.startsWith('image/')) { alert('Please drop an image (PNG or JPEG).'); return; }
+  if (!file.type.startsWith('image/')) { alert('Please drop an image (PNG, JPEG or SVG).'); return; }
   await processImageFile(file);
 });
 
@@ -45,72 +47,108 @@ function getFileFromItems(items){
   return null;
 }
 
-async function processImageFile(file){
+// Try createImageBitmap, fallback to <img> approach
+async function bitmapFromBlob(blob) {
   try {
-    // create offscreen base canvas
-    const imgBitmap = await createImageBitmap(file);
-    const baseW = imgBitmap.width;
-    const baseH = imgBitmap.height;
+    return await createImageBitmap(blob);
+  } catch (err) {
+    return await new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        // draw to temporary canvas
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth || img.width || 256;
+        c.height = img.naturalHeight || img.height || 256;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        // try to produce ImageBitmap from canvas blob
+        c.toBlob(async (b) => {
+          try {
+            const bmp = await createImageBitmap(b);
+            resolve(bmp);
+          } catch (e) {
+            // final fallback: resolve with HTMLImageElement so caller can draw it
+            resolve(img);
+          }
+        }, 'image/png');
+      };
+      img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+      img.src = url;
+    });
+  }
+}
 
+async function bitmapFromFile(file) {
+  // file is a Blob; reuse bitmapFromBlob but keep HTMLImage fallback
+  return await bitmapFromBlob(file);
+}
+
+// Main processing function
+async function processImageFile(file) {
+  try {
+    // load base image (supports PNG/JPEG/SVG)
+    const baseBitmap = await bitmapFromFile(file);
+
+    const baseW = baseBitmap.width ?? baseBitmap.naturalWidth;
+    const baseH = baseBitmap.height ?? baseBitmap.naturalHeight;
+    if (!baseW || !baseH) throw new Error('Cannot determine base image dimensions');
+
+    // draw base to offscreen canvas
     const baseCanvas = document.createElement('canvas');
     baseCanvas.width = baseW;
     baseCanvas.height = baseH;
     const bctx = baseCanvas.getContext('2d');
     bctx.clearRect(0,0,baseW,baseH);
-    bctx.drawImage(imgBitmap,0,0);
+    bctx.drawImage(baseBitmap, 0, 0, baseW, baseH);
 
-    // show original preview (limit applied via CSS)
+    // show original preview (CSS limits its display size)
     baseCanvas.toBlob((b) => {
       if (!b) return;
       origPreview.src = URL.createObjectURL(b);
     }, 'image/png');
 
-    // emblem params
-    const scale = 0.44;        // emblem width relative to image width
-    const centerPercent = 0.62; // center-lower placement
+    // emblem parameters
+    const scale = 0.44;         // emblem width relative to base width
+    const centerPercent = 0.70; // emblem vertical center (0..1)
 
-    // load emblem SVG
-    const emblemPath = './assets/cern_emblem.svg';
-    const svgText = await fetch(emblemPath, {cache: 'no-cache'}).then(r => {
-      if (!r.ok) throw new Error('emblem fetch failed ' + r.status);
-      return r.text();
-    });
-    const svgBlob = new Blob([svgText], { type: 'image/svg+xml' });
+    // fetch emblem (accepts svg/png/jpg/webp)
+    const emblemPath = './assets/atlas_emblem_bg.png';
+    const res = await fetch(emblemPath, { cache: 'no-cache' });
+    if (!res.ok) throw new Error('Emblem fetch failed: ' + res.status);
+    const emblemBlob = await res.blob();
 
-    let svgBitmap = null;
-    try { svgBitmap = await createImageBitmap(svgBlob); } catch(e){ svgBitmap = null; }
+    // convert emblem blob to bitmap or img
+    const emblemBitmapOrImg = await bitmapFromBlob(emblemBlob);
 
+    // compute overlay size preserving aspect ratio
     const ovW = Math.max(64, Math.round(baseW * scale));
-    const ovH = svgBitmap ? Math.max(64, Math.round(ovW * (svgBitmap.height / svgBitmap.width))) : ovW;
+    const intrinsicW = emblemBitmapOrImg.width ?? emblemBitmapOrImg.naturalWidth ?? ovW;
+    const intrinsicH = emblemBitmapOrImg.height ?? emblemBitmapOrImg.naturalHeight ?? ovW;
+    const ovH = Math.max(64, Math.round(ovW * (intrinsicH / intrinsicW)));
 
+    // draw emblem into overlay canvas
     const ovCanvas = document.createElement('canvas');
     ovCanvas.width = ovW;
     ovCanvas.height = ovH;
     const ovCtx = ovCanvas.getContext('2d');
     ovCtx.clearRect(0,0,ovW,ovH);
+    ovCtx.drawImage(emblemBitmapOrImg, 0, 0, ovW, ovH);
 
-    if (svgBitmap) {
-      ovCtx.drawImage(svgBitmap, 0, 0, ovW, ovH);
-    } else {
-      await new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => { ovCtx.drawImage(img, 0, 0, ovW, ovH); resolve(); };
-        img.onerror = reject;
-        img.src = URL.createObjectURL(svgBlob);
-      });
-    }
-
+    // get overlay pixel data
     const overlayImageData = ovCtx.getImageData(0,0,ovW,ovH);
 
-    // compute position centered horizontally, a bit below center
+    // compute position (centered horizontally, lower-center vertically)
     const posX = Math.round((baseW - ovW) / 2);
     const posY = Math.round(baseH * centerPercent - ovH / 2);
     const clampedX = Math.max(0, Math.min(posX, baseW - ovW));
     const clampedY = Math.max(0, Math.min(posY, baseH - ovH));
 
+    // get base pixel data
     const baseImageData = bctx.getImageData(0,0,baseW,baseH);
 
-    // call wasm
+    // call wasm compositor
     const resultArr = composite_rgba(
       baseImageData.data, baseW, baseH,
       overlayImageData.data, ovW, ovH,
@@ -125,7 +163,7 @@ async function processImageFile(file){
 
     const resultImgData = new ImageData(new Uint8ClampedArray(resultArr), baseW, baseH);
 
-    // draw final to offscreen canvas and export
+    // export final image via offscreen canvas
     const destCanvas = document.createElement('canvas');
     destCanvas.width = baseW;
     destCanvas.height = baseH;
@@ -135,7 +173,14 @@ async function processImageFile(file){
     destCanvas.toBlob((blob) => {
       if (!blob) return;
       const url = URL.createObjectURL(blob);
+      // revoke previous object URLs to avoid leaks (optional)
+      const prevOrig = origPreview.dataset._url;
+      if (prevOrig) URL.revokeObjectURL(prevOrig);
+      const prevResult = previewImg.dataset._url;
+      if (prevResult) URL.revokeObjectURL(prevResult);
+
       previewImg.src = url;
+      previewImg.dataset._url = url;
       downloadBtn.href = url;
       downloadBtn.style.display = 'inline-flex';
       downloadBtn.setAttribute('aria-hidden', 'false');
