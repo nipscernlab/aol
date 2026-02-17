@@ -111,8 +111,7 @@ async function processImageFile(file) {
 
     // emblem parameters
     const scale = 0.44;         // emblem width relative to base width
-    const centerPercent = 0.70; // emblem vertical center (0..1)
-
+    
     // fetch emblem (accepts svg/png/jpg/webp)
     const emblemPath = './assets/atlas_emblem_bg.png';
     const res = await fetch(emblemPath, { cache: 'no-cache' });

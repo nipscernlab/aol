@@ -1,14 +1,14 @@
 {
-  "name": "image_compositor",
+  "name": "aol_web",
   "type": "module",
   "version": "0.1.0",
   "files": [
-    "image_compositor_bg.wasm",
-    "image_compositor.js",
-    "image_compositor.d.ts"
+    "aol_web_bg.wasm",
+    "aol_web.js",
+    "aol_web.d.ts"
   ],
-  "main": "image_compositor.js",
-  "types": "image_compositor.d.ts",
+  "main": "aol_web.js",
+  "types": "aol_web.d.ts",
   "sideEffects": [
     "./snippets/*"
   ]
